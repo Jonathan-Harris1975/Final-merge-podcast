@@ -1,16 +1,22 @@
 {
-  "name": "podcast-final-merge",
+  "name": "podcast-merge-server",
   "version": "1.0.0",
+  "description": "Podcast merge service for intro, main, and outro segments",
   "main": "server.js",
   "type": "module",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "axios": "^1.6.0",
-    "express": "^4.18.2",
-    "fluent-ffmpeg": "^2.1.2",
-    "node-fetch": "^3.3.2",
-    "tmp": "^0.2.1"
-  }
+    "@aws-sdk/client-s3": "^3.534.0",
+    "axios": "^1.6.8",
+    "dotenv": "^16.3.1",
+    "express": "^4.19.2",
+    "ffmpeg-static": "^5.3.0",
+    "tmp": "^0.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
 }
