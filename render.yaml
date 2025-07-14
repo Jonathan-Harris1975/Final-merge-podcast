@@ -5,3 +5,10 @@ services:
     buildCommand: npm install
     startCommand: node server.js
     autoDeploy: true
+    envVars:
+      - key: R2_ENDPOINT
+        fromEnvVar: R2_ENDPOINT
+      - key: R2_ACCESS_KEY
+        fromEnvVar: R2_ACCESS_KEY
+      - key: R2_SECRET_KEY
+        fromEnvVar: R2_SECRET_KEY
