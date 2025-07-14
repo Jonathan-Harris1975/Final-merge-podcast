@@ -1,21 +1,23 @@
 import express from 'express';
 import axios from 'axios';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import ffmpegPath from 'ffmpeg-static';
+import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Resolve __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '20mb' }));
 
+// AWS R2 setup
 const s3 = new S3Client({
   region: 'auto',
   endpoint: process.env.R2_ENDPOINT,
@@ -32,13 +34,7 @@ const downloadTo = async (url, dir) => {
   fs.mkdirSync(dir, { recursive: true });
   const writer = fs.createWriteStream(dest);
 
-  const resp = await axios({
-    url,
-    method: 'GET',
-    responseType: 'stream',
-    timeout: 180000
-  });
-
+  const resp = await axios({ url, method: 'GET', responseType: 'stream', timeout: 180000 });
   await new Promise((res, rej) => {
     resp.data.pipe(writer);
     writer.on('finish', res);
@@ -66,7 +62,9 @@ const runFFmpeg = (inputListPath, outputFilePath) => {
       '-f', 'concat',
       '-safe', '0',
       '-i', inputListPath,
-      '-c', 'copy',
+      '-vn',
+      '-acodec', 'libmp3lame',
+      '-b:a', '128k',
       outputFilePath
     ]);
 
@@ -80,13 +78,13 @@ const runFFmpeg = (inputListPath, outputFilePath) => {
   });
 };
 
-// Final full merge (intro + main + outro)
+// Final merge endpoint
 app.post('/merge-files', async (req, res) => {
-  res.setTimeout(300000); // 5 min
+  res.setTimeout(300000); // 5 mins timeout for long merges
 
   const { files, output, bucket = 'main-podcast' } = req.body;
   if (!Array.isArray(files) || files.length !== 3 || !output) {
-    return res.status(400).json({ error: 'Exactly 3 files and output name required' });
+    return res.status(400).json({ error: 'Provide exactly 3 files and an output name.' });
   }
 
   try {
@@ -94,26 +92,28 @@ app.post('/merge-files', async (req, res) => {
     fs.mkdirSync(tmpDir, { recursive: true });
 
     const localFiles = [];
-    for (const u of files) localFiles.push(await downloadTo(u, tmpDir));
+    for (const url of files) {
+      const local = await downloadTo(url, tmpDir);
+      localFiles.push(local);
+    }
 
     const listFile = path.join(tmpDir, 'list.txt');
     fs.writeFileSync(listFile, localFiles.map(f => `file '${f}'`).join('\n'));
 
-    const mergedOut = path.join(tmpDir, output);
-    await runFFmpeg(listFile, mergedOut);
+    const outputFilePath = path.join(tmpDir, output);
+    await runFFmpeg(listFile, outputFilePath);
 
-    const buf = fs.readFileSync(mergedOut);
-    const pub = await uploadToR2(bucket, output, buf);
+    const buffer = fs.readFileSync(outputFilePath);
+    const publicUrl = await uploadToR2(bucket, output, buffer);
 
-    res.json({ uploaded: true, filename: output, url: pub });
+    res.json({ uploaded: true, filename: output, url: publicUrl });
   } catch (err) {
-    console.error('Final merge error:', err);
+    console.error('Merge error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Health check
-app.get('/status', (_, res) => res.send('Final merge server live 🎧'));
+app.get('/status', (_, res) => res.send('🎧 Final merge server is live.'));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Final merge server on port ${PORT}`));
+app.listen(PORT, () => console.log(`🎙️ Final merge server running on port ${PORT}`));
