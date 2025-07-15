@@ -1,22 +1,15 @@
 {
-  "name": "podcast-merge-server",
+  "name": "fade-merge-podcast",
   "version": "1.0.0",
-  "description": "Podcast merge service for intro, main, and outro segments",
+  "description": "Podcast merge with intro/outro fades and upload to R2",
   "main": "server.js",
-  "type": "module",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.442.0",
-    "axios": "^1.6.2",
-    "dotenv": "^16.1.4",
-    "express": "^4.18.2",
-    "ffmpeg-static": "^4.4.0",
-    "tmp": "^0.2.1"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "license": "MIT"
+    "axios": "^1.6.0",
+    "aws-sdk": "^2.1520.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
+  }
 }
