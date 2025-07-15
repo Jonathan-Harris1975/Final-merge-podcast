@@ -1,23 +1,18 @@
-import express from 'express';
-import axios from 'axios';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import ffmpegPath from 'ffmpeg-static';
-import dotenv from 'dotenv';
+const express = require('express');
+const axios = require('axios');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const dotenv = require('dotenv');
+const fs = require('fs');
+const path = require('path');
+const { fileURLToPath } = require('url');
+const { spawn } = require('child_process');
+const ffmpegPath = require('ffmpeg-static');
 
 dotenv.config();
-
-// Resolve __dirname in ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json({ limit: '20mb' }));
 
-// AWS R2 setup
 const s3 = new S3Client({
   region: 'auto',
   endpoint: process.env.R2_ENDPOINT,
@@ -34,7 +29,13 @@ const downloadTo = async (url, dir) => {
   fs.mkdirSync(dir, { recursive: true });
   const writer = fs.createWriteStream(dest);
 
-  const resp = await axios({ url, method: 'GET', responseType: 'stream', timeout: 180000 });
+  const resp = await axios({
+    url,
+    method: 'GET',
+    responseType: 'stream',
+    timeout: 180000
+  });
+
   await new Promise((res, rej) => {
     resp.data.pipe(writer);
     writer.on('finish', res);
@@ -56,64 +57,56 @@ const uploadToR2 = async (bucket, key, buffer) => {
   return `${process.env.R2_ENDPOINT}/${bucket}/${key}`;
 };
 
-const runFFmpeg = (inputListPath, outputFilePath) => {
+const runFFmpegMerge = async (introPath, mainPath, outroPath, outputPath) => {
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn(ffmpegPath, [
-      '-f', 'concat',
-      '-safe', '0',
-      '-i', inputListPath,
-      '-vn',
-      '-acodec', 'libmp3lame',
-      '-b:a', '128k',
-      outputFilePath
+      '-i', introPath,
+      '-i', mainPath,
+      '-i', outroPath,
+      '-filter_complex',
+      `[0:a]afade=t=in:st=0:d=2[intro]; \
+       [2:a]afade=t=out:st=14:d=2[outro]; \
+       [intro][1:a][outro]concat=n=3:v=0:a=1[out]`,
+      '-map', '[out]',
+      '-y',
+      outputPath
     ]);
 
-    ffmpeg.stderr.on('data', (data) => {
-      console.log(`FFmpeg: ${data.toString()}`);
-    });
-
-    ffmpeg.on('close', (code) => {
-      code === 0 ? resolve() : reject(new Error(`FFmpeg exited with code ${code}`));
+    ffmpeg.stderr.on('data', data => console.log(`FFmpeg: ${data}`));
+    ffmpeg.on('close', code => {
+      code === 0 ? resolve() : reject(new Error(`FFmpeg exited with ${code}`));
     });
   });
 };
 
-// Final merge endpoint
-app.post('/merge-files', async (req, res) => {
-  res.setTimeout(300000); // 5 mins timeout for long merges
-
+app.post('/merge-faded', async (req, res) => {
   const { files, output, bucket = 'main-podcast' } = req.body;
   if (!Array.isArray(files) || files.length !== 3 || !output) {
-    return res.status(400).json({ error: 'Provide exactly 3 files and an output name.' });
+    return res.status(400).json({ error: '3 files and output required' });
   }
 
   try {
-    const tmpDir = `/tmp/final-merge-${Date.now()}`;
+    const tmpDir = `/tmp/faded-${Date.now()}`;
     fs.mkdirSync(tmpDir, { recursive: true });
 
-    const localFiles = [];
-    for (const url of files) {
-      const local = await downloadTo(url, tmpDir);
-      localFiles.push(local);
-    }
+    const [intro, main, outro] = await Promise.all(
+      files.map(url => downloadTo(url, tmpDir))
+    );
 
-    const listFile = path.join(tmpDir, 'list.txt');
-    fs.writeFileSync(listFile, localFiles.map(f => `file '${f}'`).join('\n'));
+    const outputPath = path.join(tmpDir, output);
+    await runFFmpegMerge(intro, main, outro, outputPath);
 
-    const outputFilePath = path.join(tmpDir, output);
-    await runFFmpeg(listFile, outputFilePath);
+    const buffer = fs.readFileSync(outputPath);
+    const finalUrl = await uploadToR2(bucket, output, buffer);
 
-    const buffer = fs.readFileSync(outputFilePath);
-    const publicUrl = await uploadToR2(bucket, output, buffer);
-
-    res.json({ uploaded: true, filename: output, url: publicUrl });
+    res.json({ success: true, url: finalUrl });
   } catch (err) {
-    console.error('Merge error:', err);
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/status', (_, res) => res.send('🎧 Final merge server is live.'));
+app.get('/', (_, res) => res.send('🎧 Fade merge server live'));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🎙️ Final merge server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Fade server on port ${PORT}`));
