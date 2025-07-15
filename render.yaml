@@ -1,14 +1,14 @@
 services:
   - type: web
-    name: final-merge-podcast
+    name: fade-merge-server
     env: node
+    plan: free
     buildCommand: npm install
-    startCommand: node server.js
-    autoDeploy: true
+    startCommand: npm start
     envVars:
       - key: R2_ENDPOINT
-        fromEnvVar: R2_ENDPOINT
+        sync: false
       - key: R2_ACCESS_KEY
-        fromEnvVar: R2_ACCESS_KEY
+        sync: false
       - key: R2_SECRET_KEY
-        fromEnvVar: R2_SECRET_KEY
+        sync: false
