@@ -83,8 +83,8 @@ const runFFmpegMerge = async (introPath, mainPath, outroPath, outputPath) => {
       '-i', mainPath,
       '-i', outroPath,
       '-filter_complex',
-      `[0:a]afade=t=in:curve=sin:d=3,volume=1.2[intro];
-       [2:a]afade=t=out:curve=sin:d=3,volume=1.2[outro];
+      `[0:a]afade=t=in:d=3,volume=1.2[intro];
+       [2:a]afade=t=out:d=3,volume=1.2[outro];
        [intro][1:a][outro]concat=n=3:v=0:a=1[merged];
        [merged]loudnorm=I=-16:TP=-1.5:LRA=11[out]`,
       '-map', '[out]',
