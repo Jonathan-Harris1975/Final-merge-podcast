@@ -100,7 +100,21 @@ app.post('/merge-faded', async (req, res) => {
   try {
     const tmpDir = path.join(os.tmpdir(), `faded-${crypto.randomBytes(4).toString('hex')}`);
     fs.mkdirSync(tmpDir, { recursive: true });
+// Add this early in your server.js
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection:', err);
+});
 
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+});
+
+// Modify the start command at the bottom:
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`CPU cores: ${require('os').cpus().length}`);
+});
     // Process in queue to prevent system overload
     await processQueue.add(async () => {
       const [intro, main, outro] = await Promise.all(
