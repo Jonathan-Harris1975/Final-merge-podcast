@@ -9,7 +9,8 @@ const ffmpegPath = require('ffmpeg-static');
 const os = require('os');
 const crypto = require('crypto');
 const compression = require('compression');
-const PQueue = require('p-queue');
+const { default: PQueue } = require('p-queue');
+
 
 // Initialize environment and error handlers first
 dotenv.config();
