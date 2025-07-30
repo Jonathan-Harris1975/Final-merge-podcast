@@ -3,8 +3,8 @@ services:
     name: fade-merge-server
     env: node
     plan: free
-    buildCommand: npm install && npm run build
-    startCommand: node server.js
+    buildCommand: npm run build
+    startCommand: npm start
     envVars:
       - key: R2_ENDPOINT
         sync: false
@@ -12,5 +12,7 @@ services:
         sync: false
       - key: R2_SECRET_KEY
         sync: false
+      - key: NODE_ENV
+        value: production
     healthCheckPath: /health
     autoDeploy: true
