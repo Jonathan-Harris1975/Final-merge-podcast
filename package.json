@@ -1,6 +1,6 @@
 {
   "name": "fade-merge-podcast",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "High-performance podcast merger with professional fade effects",
   "main": "server.js",
   "scripts": {
