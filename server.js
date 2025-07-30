@@ -4,14 +4,21 @@ const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const dotenv = require('dotenv');
 const fs = require('fs');
 const path = require('path');
-const { fileURLToPath } = require('url');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
+const os = require('os');
+const crypto = require('crypto');
+const compression = require('compression');
+const PQueue = require('p-queue');
 
 dotenv.config();
 
 const app = express();
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(compression());
+
+// Limit concurrent FFmpeg processes to prevent system overload
+const processQueue = new PQueue({ concurrency: os.cpus().length > 2 ? 2 : 1 });
 
 const s3 = new S3Client({
   region: 'auto',
@@ -23,7 +30,7 @@ const s3 = new S3Client({
 });
 
 const downloadTo = async (url, dir) => {
-  const filename = path.basename(url.split('?')[0]);
+  const filename = path.basename(url.split('?')[0]) || `audio-${Date.now()}.mp3`;
   const dest = path.join(dir, filename);
 
   fs.mkdirSync(dir, { recursive: true });
@@ -45,12 +52,12 @@ const downloadTo = async (url, dir) => {
   return dest;
 };
 
-const uploadToR2 = async (bucket, key, buffer) => {
+const uploadToR2 = async (bucket, key, stream) => {
   await s3.send(
     new PutObjectCommand({
       Bucket: bucket,
       Key: key,
-      Body: buffer,
+      Body: stream,
       ContentType: 'audio/mpeg'
     })
   );
@@ -64,10 +71,14 @@ const runFFmpegMerge = async (introPath, mainPath, outroPath, outputPath) => {
       '-i', mainPath,
       '-i', outroPath,
       '-filter_complex',
-      `[0:a]afade=t=in:st=0:d=2[intro]; \
-       [2:a]afade=t=out:st=14:d=2[outro]; \
-       [intro][1:a][outro]concat=n=3:v=0:a=1[out]`,
+      `[0:a]afade=t=in:curve=sin:d=3,volume=1.2[intro];
+       [2:a]afade=t=out:curve=sin:d=3,volume=1.2[outro];
+       [intro][1:a][outro]concat=n=3:v=0:a=1[merged];
+       [merged]loudnorm=I=-16:TP=-1.5:LRA=11[out]`,
       '-map', '[out]',
+      '-c:a', 'libmp3lame',
+      '-q:a', '1', // Higher quality (0-9, 0 is best)
+      '-threads', Math.max(1, os.cpus().length - 1).toString(),
       '-y',
       outputPath
     ]);
@@ -81,32 +92,59 @@ const runFFmpegMerge = async (introPath, mainPath, outroPath, outputPath) => {
 
 app.post('/merge-faded', async (req, res) => {
   const { files, output, bucket = 'main-podcast' } = req.body;
+  
   if (!Array.isArray(files) || files.length !== 3 || !output) {
-    return res.status(400).json({ error: '3 files and output required' });
+    return res.status(400).json({ error: 'Exactly 3 audio files and output filename required' });
   }
 
   try {
-    const tmpDir = `/tmp/faded-${Date.now()}`;
+    const tmpDir = path.join(os.tmpdir(), `faded-${crypto.randomBytes(4).toString('hex')}`);
     fs.mkdirSync(tmpDir, { recursive: true });
 
-    const [intro, main, outro] = await Promise.all(
-      files.map(url => downloadTo(url, tmpDir))
-    );
+    // Process in queue to prevent system overload
+    await processQueue.add(async () => {
+      const [intro, main, outro] = await Promise.all(
+        files.map(url => downloadTo(url, tmpDir))
+      );
 
-    const outputPath = path.join(tmpDir, output);
-    await runFFmpegMerge(intro, main, outro, outputPath);
+      const outputPath = path.join(tmpDir, output);
+      await runFFmpegMerge(intro, main, outro, outputPath);
 
-    const buffer = fs.readFileSync(outputPath);
-    const finalUrl = await uploadToR2(bucket, output, buffer);
+      const fileStream = fs.createReadStream(outputPath);
+      const finalUrl = await uploadToR2(bucket, output, fileStream);
 
-    res.json({ success: true, url: finalUrl });
+      // Cleanup
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+
+      res.json({ 
+        success: true, 
+        url: finalUrl,
+        message: 'Audio merged with professional fade effects'
+      });
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    console.error('Merge error:', err);
+    res.status(500).json({ 
+      error: 'Audio processing failed',
+      details: err.message 
+    });
   }
 });
 
-app.get('/', (_, res) => res.send('🎧 Fade merge server live'));
+// Health check endpoint
+app.get('/health', (_, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    memory: process.memoryUsage(),
+    load: os.loadavg()
+  });
+});
+
+app.get('/', (_, res) => res.send('🎧 Professional Podcast Fade Merge Server'));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Fade server on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`CPU cores: ${os.cpus().length}`);
+  console.log(`FFmpeg path: ${ffmpegPath}`);
+});
