@@ -1,13 +1,13 @@
 {
   "name": "fade-merge-podcast",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "High-performance podcast merger with professional fade effects",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "NODE_ENV=production node server.js",
     "dev": "nodemon server.js",
-    "build": "echo 'Build complete'",
-    "keepalive": "node keepalive.js"
+    "build": "echo 'Build complete' && npm install",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.470.0",
