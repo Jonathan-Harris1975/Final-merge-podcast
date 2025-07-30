@@ -10,10 +10,6 @@ const os = require('os');
 const crypto = require('crypto');
 const compression = require('compression');
 const { default: PQueue } = require('p-queue');
-const processQueue = new PQueue.default({ 
-  concurrency: os.cpus().length > 2 ? 2 : 1 
-});
-
 
 // Initialize environment and error handlers first
 dotenv.config();
